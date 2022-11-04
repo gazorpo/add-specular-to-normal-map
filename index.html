@@ -1,0 +1,126 @@
+<!doctype html>
+
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Add Specular to Normal Map</title>
+</head>
+
+<body>
+  <h1>Add Specular to Normal Map</h1>
+  <p>Convert a greyscale specular map to a normal map's alpha channel</p>
+  <p>Eight-bit PNG files supported</p>
+
+  <h2 id="map1heading">Normal map</h2>
+  <input type="file" name="map1" id="map1" aria-labelledby="map1heading">
+  <div class="map-container" id="map1container"></div>
+
+  <h2 id="map2heading">Specular or roughness map</h2>
+  <input type="radio" name="map2type" id="specular" checked>
+  <label for="specular">Specular</label>
+  <input type="radio" name="map2type" id="roughness">
+  <label for="roughness">Roughness</label>
+  <p>Roughness will simply be inverted</p>
+  <input type="file" name="map2" id="map2" aria-labelledby="map2heading">
+  <div class="map-container" id="map2container"></div>
+
+  <h2>Combined result</h2>
+  <canvas id="result"></canvas>
+
+  <style>
+    .map-container img {
+      max-height: 256px;
+      max-width: 256px;
+    }
+  </style>
+
+  <script>
+    const map1Input = document.getElementById('map1')
+    const map2Input = document.getElementById('map2')
+
+    async function handleInput() {
+      let map1ImageData
+      let map2ImageData
+
+      if (map1Input.files.length) map1ImageData = await showInputMapAndGetImageData('map1', map1Input.files[0])
+      if (map2Input.files.length) map2ImageData = await showInputMapAndGetImageData('map2', map2Input.files[0])
+
+      if (!map1ImageData || !map2ImageData) return
+
+      if (map1ImageData.width !== map2ImageData.width || map1ImageData.height !== map2ImageData.height)
+        return alert('Images must be same size')
+
+      const map2type = document.querySelector('input[name="map2type"]:checked').id
+      const specularImageData = map2type === 'specular' ? map2ImageData : getInvertedImageData(map2ImageData)
+
+      const newImageData = getNormalMapImageDataWithSpecularAlpha(map1ImageData, specularImageData)
+
+      const canvas = document.getElementById('result')
+      canvas.width = map1ImageData.width
+      canvas.height = map1ImageData.height
+      const context = canvas.getContext('2d')
+      context.putImageData(newImageData, 0, 0)
+    }
+
+    const showInputMapAndGetImageData = (name, file) => new Promise((resolve, reject) => {
+      const fileReader = new FileReader()
+
+      fileReader.addEventListener('load', event => {
+        const dataURL = event.target.result
+        const imageElement = document.createElement('img')
+
+        imageElement.addEventListener('load', () => {
+          const canvas = document.createElement('canvas')
+          canvas.width = imageElement.width
+          canvas.height = imageElement.height
+          const context = canvas.getContext('2d')
+          context.drawImage(imageElement, 0, 0)
+          const imageData = context.getImageData(0, 0, imageElement.width, imageElement.height)
+          resolve(imageData)
+        })
+
+        imageElement.addEventListener('error', reject)
+
+        imageElement.src = dataURL
+        const containerElement = document.getElementById(`${name}container`)
+        containerElement.innerHTML = imageElement.outerHTML
+      })
+
+      fileReader.addEventListener('abort', reject)
+      fileReader.addEventListener('error', reject)
+
+      fileReader.readAsDataURL(file)
+    })
+
+    map1Input.addEventListener('change', handleInput)
+    map2Input.addEventListener('change', handleInput)
+
+    const map2typeButtons = document.querySelectorAll('input[name="map2type"]')
+    for (const button of map2typeButtons)
+      button.addEventListener('change', event => {
+        if (event.target.checked) handleInput()
+      })
+
+    function getInvertedImageData(imageData) {
+      const newDataArray = new Uint8ClampedArray(imageData.data.length)
+
+      for (let index = 0; index < imageData.data.length; index += 1)
+        if ((index + 1) % 4 !== 0)
+          newDataArray[index] = 255 - imageData.data[index]
+
+      return new ImageData(newDataArray, imageData.width)
+    }
+
+    function getNormalMapImageDataWithSpecularAlpha(normalMapImageData, specularMapImageData) {
+      const newDataArray = new Uint8ClampedArray(normalMapImageData.data)
+
+      for (let index = 3; index < normalMapImageData.data.length; index += 4)
+        newDataArray[index] = specularMapImageData.data[index - 1] // just use the blue value because it should be the same as red and green and if it isnt then idk what are we even doing
+
+      return new ImageData(newDataArray, normalMapImageData.width)
+    }
+  </script>
+</body>
+
+</html>
